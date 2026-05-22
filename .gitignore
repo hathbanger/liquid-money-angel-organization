@@ -1,3 +1,6 @@
 node_modules
 .next
 .env*
+public/generated/
+tsconfig.tsbuildinfo
+*.log
