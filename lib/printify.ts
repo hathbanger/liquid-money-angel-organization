@@ -461,3 +461,88 @@ export const simulateWebhook = (shopId: number, webhookId: string, opts?: Printi
     {},
     opts,
   );
+
+// ════════════════════════════════════════════════════════════════════════
+// Merch-pipeline helpers (used by lib/printify-mockup.ts).
+//
+// The wrappers above are a general typed surface over the Printify REST
+// API. Everything below is opinionated helpers specifically for turning
+// a generated print artwork into a real product photo:
+//
+//   - BLUEPRINT_BY_SHAPE: map merch shapes (tee, hoodie, …) to a sane
+//     default Printify blueprint id. Override per-account via
+//     PRINTIFY_BLUEPRINT_<SHAPE> env if a blueprint isn't carried by the
+//     connected print provider.
+//   - getShopId(): memoized resolver — env wins, else first-shop fallback.
+//   - frontMockupUrl(): pull the front product photo from a created
+//     Product's `images` array.
+//   - pickRepresentativeVariants(): take a small subset of a blueprint ×
+//     provider's variant list so createProduct has a valid `variants`
+//     payload without enabling all 80 size×color combos.
+// ════════════════════════════════════════════════════════════════════════
+
+export class PrintifyError extends Error {
+  constructor(message: string, public status?: number, public body?: string) {
+    super(message);
+    this.name = 'PrintifyError';
+  }
+}
+
+let cachedShopId: number | null = null;
+export async function getShopId(): Promise<number> {
+  if (cachedShopId !== null) return cachedShopId;
+  const envId = process.env.PRINTIFY_SHOP_ID;
+  if (envId && /^\d+$/.test(envId)) {
+    cachedShopId = Number(envId);
+    return cachedShopId;
+  }
+  const shops = await listShops();
+  if (shops.length === 0) {
+    throw new PrintifyError(
+      'No Printify shops on this account — create one at https://printify.com/app/store and set PRINTIFY_SHOP_ID',
+    );
+  }
+  cachedShopId = shops[0].id;
+  return cachedShopId;
+}
+
+export function frontMockupUrl(product: Product): string | null {
+  const front = product.images.find(
+    (img) => img.position === 'front' && (img as { is_default?: boolean }).is_default,
+  );
+  if (front) return front.src;
+  const anyFront = product.images.find((img) => img.position === 'front');
+  if (anyFront) return anyFront.src;
+  return product.images[0]?.src ?? null;
+}
+
+export function pickRepresentativeVariants(
+  resp: { variants: BlueprintVariant[] },
+  max = 6,
+): number[] {
+  const seenColors = new Set<unknown>();
+  const picks: number[] = [];
+  for (const v of resp.variants) {
+    const color = (v.options as { color?: unknown; colors?: unknown }).color
+      ?? (v.options as { color?: unknown; colors?: unknown }).colors;
+    const key = color ?? v.id;
+    if (seenColors.has(key)) continue;
+    seenColors.add(key);
+    picks.push(v.id);
+    if (picks.length >= max) break;
+  }
+  if (picks.length === 0 && resp.variants[0]) picks.push(resp.variants[0].id);
+  return picks;
+}
+
+/** Default Printify blueprint id per merch shape. Override via
+ *  PRINTIFY_BLUEPRINT_<SHAPE> env if a blueprint isn't carried by the
+ *  connected print provider. */
+export const BLUEPRINT_BY_SHAPE: Record<string, number> = {
+  tee: Number(process.env.PRINTIFY_BLUEPRINT_TEE ?? 6),
+  hoodie: Number(process.env.PRINTIFY_BLUEPRINT_HOODIE ?? 77),
+  mug: Number(process.env.PRINTIFY_BLUEPRINT_MUG ?? 19),
+  sticker: Number(process.env.PRINTIFY_BLUEPRINT_STICKER ?? 1066),
+  tote: Number(process.env.PRINTIFY_BLUEPRINT_TOTE ?? 1207),
+  poster: Number(process.env.PRINTIFY_BLUEPRINT_POSTER ?? 5),
+};

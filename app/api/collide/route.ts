@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { llmCall, generateImage, extractJSON } from '@/lib/llm';
+import { generateDomainLogo } from '@/lib/generate-logo';
 import { DOMAIN_COLORS } from '@/lib/constants';
+
+export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 function sseEvent(data: unknown): string {
   return `data: ${JSON.stringify(data)}\n\n`;
@@ -41,12 +45,17 @@ Return ONLY a JSON array: [{"domain": "...", "active_principle": "...", "bridgin
 
         controller.enqueue(encoder.encode(sseEvent({ type: 'domains', domains })));
 
-        // Generate domain logos in parallel via gpt-image-1
-        const domainLogoPromises = domains.map((d: { domain: string }, i: number) => {
-          const color = DOMAIN_COLORS[i % DOMAIN_COLORS.length];
-          return generateImage(
-            `Minimalist, futuristic tech company logo mark for "${d.domain}". Abstract geometric symbol, single accent color ${color} on pure white background. No text, no letters, no words. Clean vector style like Stripe/Linear/Notion branding. Professional Series A quality. Simple, bold, iconic.`
-          );
+        const domainLogoPromises = domains.map((d: { domain: string }, i: number) =>
+          generateDomainLogo(d.domain, DOMAIN_COLORS[i % DOMAIN_COLORS.length])
+        );
+
+        Promise.all(domainLogoPromises).then((logos) => {
+          try {
+            controller.enqueue(encoder.encode(sseEvent({
+              type: 'domain-logos',
+              logos,
+            })));
+          } catch { /* stream may have closed */ }
         });
 
         // Phase 2: Collide each domain
@@ -84,12 +93,25 @@ Return ONLY a JSON array: [{"company_name": "...", "tagline": "...", "mechanism"
             accentColor,
           })));
 
-          // Generate idea logos in background
-          const ideaLogoPromises = ideas.map((idea: { company_name: string }) =>
-            generateImage(
-              `Minimalist, futuristic tech startup logo for "${idea.company_name}" (inspired by ${d.domain}). Abstract geometric symbol, accent color ${accentColor} on pure white background. No text, no letters, no words. Clean vector style, professional branding. Simple, bold, iconic mark.`
-            )
-          );
+          // Generate idea logos in background.
+          // Prompt is *content-grounded*: each idea's logo is built from its
+          // mechanism + tagline, not just the name. A "bankruptcy livestream"
+          // company should read visually like media/finance, not generic
+          // abstract shapes. The source domain ("${d.domain}") seeds the
+          // visual vocabulary (geological, biological, mechanical, etc.).
+          const ideaLogoPromises = ideas.map((idea: { company_name: string; tagline?: string; mechanism?: string }) => {
+            const promptParts = [
+              `Minimalist Series-A startup logo mark for "${idea.company_name}".`,
+              idea.mechanism ? `What the company does: ${idea.mechanism}` : '',
+              idea.tagline ? `Tagline: ${idea.tagline}` : '',
+              `Inspired by the domain of "${d.domain}" — let that subject matter shape the visual vocabulary.`,
+              `Abstract geometric symbol. Single accent color ${accentColor} on pure white background.`,
+              `No text, no letters, no words in the image — pure mark.`,
+              `Style references: Stripe, Linear, Notion, Vercel. Clean vector, bold, iconic.`,
+              `Composition: centered, generous white margin, square format.`,
+            ].filter(Boolean).join(' ');
+            return generateImage(promptParts);
+          });
 
           const flusher = Promise.all(ideaLogoPromises).then(async (logos) => {
             try {
@@ -103,12 +125,7 @@ Return ONLY a JSON array: [{"company_name": "...", "tagline": "...", "mechanism"
           ideaLogoFlushers.push(flusher);
         }
 
-        // Wait for domain logos and send them
-        const domainLogos = await Promise.all(domainLogoPromises);
-        controller.enqueue(encoder.encode(sseEvent({
-          type: 'domain-logos',
-          logos: domainLogos,
-        })));
+        await Promise.allSettled(domainLogoPromises);
 
         // Wait for all idea logos to flush
         await Promise.allSettled(ideaLogoFlushers);

@@ -1,0 +1,45 @@
+{
+  "generatedAt": "2026-05-22T10:19:55.547Z",
+  "images": [
+    {
+      "slug": "hero-network",
+      "file": "/landing/hero-network.jpg",
+      "mime": "image/jpeg",
+      "bytes": 135577,
+      "tool": "fal-flux-pro",
+      "prompt": "Hyper-realistic photograph: warm dusk light pouring through floor-to-ceiling windows of a modern co-working loft. Two startup founders, mid-30s, racially diverse, laughing while one points at a glowing laptop running a terminal. Bokeh of plants, vinyl records, and neon LMAO sign in soft focus behind. Shot on 50mm f/1.4, Kodak Portra 800 film grain, cinematic color grade, no logos, no text on screens.",
+      "amount": 0.04,
+      "transactionId": null
+    },
+    {
+      "slug": "agent-marketplace",
+      "file": "/landing/agent-marketplace.jpg",
+      "mime": "image/jpeg",
+      "bytes": 233418,
+      "tool": "fal-flux-pro",
+      "prompt": "Editorial photograph for a Wired magazine feature about AI agents transacting on a marketplace. Overhead shot of a craftsman wooden desk: a sleek MacBook Pro showing a colorful card grid interface (no readable text), a Visa-style payment card resting beside a paper receipt, an open notebook with hand sketches, espresso cup, brass pen. Soft window light, photorealistic, natural shadows, 35mm.",
+      "amount": 0.04,
+      "transactionId": null
+    },
+    {
+      "slug": "builders",
+      "file": "/landing/builders.jpg",
+      "mime": "image/jpeg",
+      "bytes": 117923,
+      "tool": "fal-flux-pro",
+      "prompt": "Photorealistic environmental portrait: a young Black female engineer wearing AirPods Max headphones, sitting on a brutalist concrete bench in front of a sunset-orange wall, holding a phone that displays a colorful gradient app interface. Shallow depth of field, golden hour lighting, Fujifilm X-T5, candid expression, no visible logos.",
+      "amount": 0.04,
+      "transactionId": null
+    },
+    {
+      "slug": "collisions",
+      "file": "/landing/collisions.jpg",
+      "mime": "image/jpeg",
+      "bytes": 162256,
+      "tool": "fal-flux-pro",
+      "prompt": "Macro photograph: two glowing magnetic spheres — one bright orange, one electric green — colliding mid-air against a pure white seamless studio background, generating a halo of light particles and motion blur tendrils. Hasselblad H6D, octa-bank lighting, ultra crisp focus on contact point, photorealistic, science museum aesthetic.",
+      "amount": 0.04,
+      "transactionId": null
+    }
+  ]
+}
