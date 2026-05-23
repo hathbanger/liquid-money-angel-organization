@@ -189,9 +189,16 @@ export default function CollisionPage({ params }: PageProps) {
 
   const pageStyle: CSSProperties = useMemo(() => {
     if (!collision) return {};
-    const main = variant?.main ?? collision.domainColor;
+    // Brand the company-site around the SAME color shown on the marketplace
+    // card. `collision.domainColor` is the per-collision color picked from
+    // `palette.domains[i]` when the card rendered — that's the orange the
+    // user saw next to "Stratum" on /marketplace. Previously this used
+    // `variant.main` (palette's MAIN), which is shared across the four
+    // domains in a palette and almost never matches the per-card hue —
+    // hence the blue site for an orange-card company.
+    const main = collision.domainColor;
     const hover = variant?.hover ?? collision.domainColor;
-    const soft = variant?.soft ?? "rgba(0,0,0,0.05)";
+    const soft = `color-mix(in srgb, ${collision.domainColor} 10%, transparent)`;
     return {
       "--accent": main,
       "--accent-hover": hover,
