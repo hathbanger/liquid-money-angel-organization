@@ -132,17 +132,29 @@ export async function getShopId(): Promise<number> {
 }
 
 /**
- * Upload an image to Printify by URL. Returns the image_id used in
- * print_areas references when creating a product.
+ * Upload an image to Printify by absolute HTTPS URL. Returns the image_id
+ * used in print_areas references when creating a product.
  *
- * Printify accepts either `{ contents: <base64> }` or `{ url: <https url> }`.
- * Our images already live on a public CDN after persist-media, so the URL
- * path is cheaper and we avoid base64 encoding multiple MB of PNG.
+ * Printify requires a publicly-reachable HTTPS URL on this path. Use
+ * `uploadImageByContents` when the image lives only on the local server
+ * (which is the dev-server / `public/generated/…` case).
  */
 export async function uploadImageByUrl(url: string, fileName: string): Promise<PrintifyUpload> {
   return call<PrintifyUpload>('POST', 'v1/uploads/images.json', {
     file_name: fileName,
     url,
+  });
+}
+
+/**
+ * Upload an image to Printify by base64-encoded contents. Use this when
+ * the image is local-only (Printify can't fetch a localhost URL). The
+ * field name is `contents` per Printify docs.
+ */
+export async function uploadImageByContents(base64: string, fileName: string): Promise<PrintifyUpload> {
+  return call<PrintifyUpload>('POST', 'v1/uploads/images.json', {
+    file_name: fileName,
+    contents: base64,
   });
 }
 

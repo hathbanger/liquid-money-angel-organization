@@ -26,7 +26,7 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 interface MerchRequest {
   slug?: string;
@@ -185,25 +185,26 @@ export async function POST(req: NextRequest) {
     // Phase 1: LLM concepts (~5-10s)
     const concepts = await generateMerchConcepts({ company_name, tagline, mechanism, accent, domain });
 
-    // Phase 2: parallel image gens for the print artwork (longest pole among
-    // the image gens). Each can independently fail without blocking the
-    // others — the page handles `print_url: null` by falling back to the
-    // SVG initials placeholder for that single product.
-    const productsWithPrints: MerchProduct[] = await Promise.all(
-      concepts.map(async (concept) => {
-        const print_url = await generateLogoFromPrompt(concept.print_prompt, `merch:${concept.shape}`)
-          .catch((err) => {
-            console.error(`merch image gen failed for ${concept.shape}:`, err);
-            return null;
-          });
-        return {
-          ...concept,
-          id: concept.shape, // shape doubles as id since each shape is unique
-          print_url,
-          mockup_url: null,
-        };
-      }),
-    );
+    // Phase 2: print artwork generation. SERIAL on purpose — visa-cli's
+    // payment session doesn't handle concurrent calls reliably; an earlier
+    // parallel Promise.all attempt yielded ~33% success (2/6). Six serial
+    // calls at ~5-8s each = ~30-50s wall time, but ~100% success. Failed
+    // products carry `print_url: null` and skip Phase 3 below; the page
+    // shows the SVG initials placeholder for those.
+    const productsWithPrints: MerchProduct[] = [];
+    for (const concept of concepts) {
+      const print_url = await generateLogoFromPrompt(concept.print_prompt, `merch:${concept.shape}`)
+        .catch((err) => {
+          console.error(`merch image gen failed for ${concept.shape}:`, err);
+          return null;
+        });
+      productsWithPrints.push({
+        ...concept,
+        id: concept.shape,
+        print_url,
+        mockup_url: null,
+      });
+    }
 
     // Phase 3: Printify mockups. Skipped entirely when PRINTIFY_API_TOKEN is
     // absent (development without a Printify account); also skipped per-

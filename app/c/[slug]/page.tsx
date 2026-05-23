@@ -81,12 +81,21 @@ function saveMerchCache(slug: string, products: Product[]): void {
   }
 }
 
+type BuyState = 'idle' | 'paying' | 'paid' | 'error';
+
+interface BuyReceipt {
+  transaction?: string;
+  network?: string;
+  payer?: string;
+}
+
 export default function CollisionPage({ params }: PageProps) {
   const { slug } = use(params);
   const [collision, setCollision] = useState<StoredCollision | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [toast, setToast] = useState<string | null>(null);
+  const [buyState, setBuyState] = useState<Record<string, BuyState>>({});
   /**
    * Merch products — starts as FALLBACK_PRODUCTS (generic placeholders),
    * upgrades to LLM-generated company-specific concepts after /api/company-merch
@@ -191,10 +200,59 @@ export default function CollisionPage({ params }: PageProps) {
     } as CSSProperties;
   }, [collision, variant]);
 
-  function addToCart(id: string, name: string) {
-    setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
-    setToast(`Added ${name} to cart`);
-    window.setTimeout(() => setToast(null), 1800);
+  function showToast(msg: string, durationMs = 2600): void {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), durationMs);
+  }
+
+  /**
+   * Real x402 purchase. POSTs to /api/buy, which spawns the server-side x402
+   * v2 buyer (EVM signer + ExactEvmScheme) and pays the seller's 402-protected
+   * endpoint. On success we still bump the local cart counter so the existing
+   * UI affordance keeps working — the user sees the same "added" feeling, but
+   * the backing event is a real on-chain settlement on Base Sepolia.
+   *
+   * The seller URL is derived server-side from X402_SELLER_URL_BASE so the
+   * client never has to know about the wallet, network, or merchant URL.
+   */
+  async function buyProduct(id: string, name: string, price: number): Promise<void> {
+    if (buyState[id] === 'paying') return;
+    setBuyState((s) => ({ ...s, [id]: 'paying' }));
+    showToast(`Paying $${price} for ${name}…`, 8000);
+    try {
+      const res = await fetch('/api/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, shape: id, quantity: 1 }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        code?: string;
+        configured?: boolean;
+        upstreamStatus?: number;
+        hint?: string;
+        settle?: BuyReceipt | null;
+      };
+      if (!res.ok || !data.ok) {
+        setBuyState((s) => ({ ...s, [id]: 'error' }));
+        const msg = data.error
+          ? data.code === 'MISSING_KEY' || data.code === 'MISSING_SELLER'
+            ? 'x402 not configured — set EVM_PRIVATE_KEY and X402_SELLER_URL_BASE'
+            : `Purchase failed: ${data.error}`
+          : `Purchase failed (HTTP ${res.status})`;
+        showToast(msg, 5000);
+        return;
+      }
+      setBuyState((s) => ({ ...s, [id]: 'paid' }));
+      setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+      const tx = data.settle?.transaction;
+      const short = tx ? `${tx.slice(0, 6)}…${tx.slice(-4)}` : 'settled';
+      showToast(`Bought ${name} · ${short}`, 4500);
+    } catch (err) {
+      setBuyState((s) => ({ ...s, [id]: 'error' }));
+      showToast(`Purchase failed: ${(err as Error).message}`, 5000);
+    }
   }
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
@@ -411,7 +469,8 @@ export default function CollisionPage({ params }: PageProps) {
                   mechanism: collision.mechanism,
                   domain: collision.domain,
                 })}
-                onAdd={() => addToCart(p.id, p.name)}
+                buyState={buyState[p.id] ?? 'idle'}
+                onBuy={() => buyProduct(p.id, p.name, p.price)}
               />
             ))}
           </div>
@@ -479,13 +538,18 @@ function ProductCard({
   product,
   company,
   printIcon,
-  onAdd,
+  buyState,
+  onBuy,
 }: {
   product: Product;
   company: string;
   printIcon: { paths: React.ReactNode; strokeWidth: number };
-  onAdd: () => void;
+  buyState: BuyState;
+  onBuy: () => void;
 }) {
+  const paying = buyState === 'paying';
+  const paid = buyState === 'paid';
+  const label = paying ? 'Paying…' : paid ? `Bought · buy another` : `Buy · $${product.price}`;
   return (
     <div className="c-product">
       <div className="c-product-art">
@@ -507,14 +571,20 @@ function ProductCard({
             ↳ {product.printConcept}
           </div>
         )}
-        <button className="c-product-cta" onClick={onAdd}>
-          Add to cart
+        <button
+          className="c-product-cta"
+          onClick={onBuy}
+          disabled={paying}
+          aria-busy={paying}
+          data-state={buyState}
+        >
+          {label}
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M5 12h14M13 5l7 7-7 7" />
           </svg>
         </button>
         <div className="c-product-meta">
-          Ships in 3–5 days · {company.toLowerCase().replace(/\s+/g, "-")}.shop
+          x402 · Base Sepolia · {company.toLowerCase().replace(/\s+/g, "-")}.shop
         </div>
       </div>
     </div>

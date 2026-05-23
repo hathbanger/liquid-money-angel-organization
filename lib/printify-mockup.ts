@@ -9,6 +9,8 @@
  * side too, but skipping the network is faster).
  */
 
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   BLUEPRINT_BY_SHAPE,
   PrintifyError,
@@ -18,6 +20,7 @@ import {
   listPrintProvidersForBlueprint,
   listVariants,
   pickRepresentativeVariants,
+  uploadImageByContents,
   uploadImageByUrl,
 } from './printify';
 
@@ -37,10 +40,30 @@ export interface MockupResult {
 
 const uploadCache = new Map<string, { imageId: string; fileName: string }>();
 
+/**
+ * Upload an image to Printify, transparently choosing the right path:
+ *
+ *   - absolute https URL → upload-by-url (Printify fetches it themselves)
+ *   - relative path "/generated/..." → read from public/<path>, upload as
+ *     base64 contents (Printify can't reach localhost)
+ *
+ * Cached by source URL within the same process so the 6 parallel mockup
+ * jobs for a single company never re-encode the same artwork.
+ */
 async function uploadOrReuse(printUrl: string, fileName: string): Promise<string> {
   const cached = uploadCache.get(printUrl);
   if (cached) return cached.imageId;
-  const upload = await uploadImageByUrl(printUrl, fileName);
+
+  let upload;
+  if (printUrl.startsWith('http://') || printUrl.startsWith('https://')) {
+    upload = await uploadImageByUrl(printUrl, fileName);
+  } else {
+    // Relative path — image lives in `public/` on this server.
+    const fsPath = join(process.cwd(), 'public', printUrl.replace(/^\//, ''));
+    const bytes = await readFile(fsPath);
+    const base64 = bytes.toString('base64');
+    upload = await uploadImageByContents(base64, fileName);
+  }
   uploadCache.set(printUrl, { imageId: upload.id, fileName });
   return upload.id;
 }
